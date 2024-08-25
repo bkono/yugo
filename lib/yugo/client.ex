@@ -143,6 +143,30 @@ defmodule Yugo.Client do
   end
 
   @impl true
+  def handle_call({:capabilities}, _from, conn) do
+    {:reply, conn.capabilities, conn}
+  end
+
+  @impl true
+  def handle_call({:list, reference, mailbox}, from, conn) do
+    conn =
+      conn
+      |> cancel_idle()
+      |> send_command(
+        "LIST #{quote_string(reference)} #{quote_string(mailbox)}",
+        &on_list_response(&1, &2, &3, from)
+      )
+
+    {:noreply, conn}
+  end
+
+  defp on_list_response(conn, :ok, response, from) do
+    mailbox_names = Enum.map(response, fn %{name: name} -> name end)
+    GenServer.reply(from, {:ok, mailbox_names})
+    maybe_idle(conn)
+  end
+
+  @impl true
   def handle_info({:do_init, args}, _state) do
     {:ok, socket} =
       if args[:tls] do
@@ -361,19 +385,21 @@ defmodule Yugo.Client do
   defp maybe_idle(conn) do
     if "IDLE" in conn.capabilities and not command_in_progress?(conn) and not conn.idling do
       timer = Process.send_after(self(), :idle_timeout, @idle_timeout)
-
-      %{conn | idling: true, idle_timer: timer, idle_timed_out: false}
-      |> send_command("IDLE", &on_idle_response/3)
+      conn = %{conn | idling: true, idle_timer: timer, idle_timed_out: false}
+      send_command(conn, "IDLE", &on_idle_response/3)
     else
       conn
     end
   end
 
   defp cancel_idle(conn) do
-    Process.cancel_timer(conn.idle_timer)
-
-    %{conn | idling: false, idle_timer: nil}
-    |> send_raw("DONE\r\n")
+    if conn.idling do
+      Process.cancel_timer(conn.idle_timer)
+      send_raw(conn, "DONE\r\n")
+      %{conn | idling: false, idle_timer: nil}
+    else
+      conn
+    end
   end
 
   defp maybe_process_messages(conn) do
@@ -515,12 +541,24 @@ defmodule Yugo.Client do
         %{conn | capabilities: caps}
 
       {:tagged_response, {tag, status, text}} when status == :ok ->
-        {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
+        {%{on_response: resp_fn, command: command}, conn} =
+          pop_in(conn, [Access.key!(:tag_map), tag])
 
-        resp_fn.(conn, status, text)
+        if String.contains?(command, "LIST") do
+          full_response = Enum.reverse(conn.list_response_acc)
+          conn = %{conn | list_response_acc: []}
+          resp_fn.(conn, status, full_response)
+        else
+          resp_fn.(conn, status, text)
+        end
 
       {:tagged_response, {tag, status, text}} when status in [:bad, :no] ->
-        raise "Got `#{status |> to_string() |> String.upcase()}` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+        if status == :bad and String.contains?(text, "Expected DONE") do
+          # This is likely due to an IDLE command being interrupted
+          %{conn | idling: false, idle_timer: nil}
+        else
+          raise "Got `#{status |> to_string() |> String.upcase()}` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+        end
 
       :continuation ->
         conn
@@ -629,6 +667,10 @@ defmodule Yugo.Client do
 
       {:fetch, {_seq_num, :uid, _uid}} ->
         conn
+
+      {:list, %{flags: flags, delimiter: delimiter, name: name}} ->
+        list_item = %{flags: flags, delimiter: delimiter, name: name}
+        %{conn | list_response_acc: [list_item | conn.list_response_acc]}
     end
   end
 
