@@ -301,7 +301,7 @@ defmodule Yugo.Client do
   @impl true
   def handle_info({close_message, _sock}, conn)
       when close_message in [:tcp_closed, :ssl_closed] do
-    {:stop, :normal, conn}
+    {:stop, {:connection_closed, close_message}, conn}
   end
 
   @noop_poll_interval 5000
@@ -827,13 +827,21 @@ defmodule Yugo.Client do
     do: conn |> apply_action(action) |> apply_actions(rest)
 
   defp send_raw(conn, stuff) do
-    if conn.tls do
-      :ssl.send(conn.socket, stuff)
-    else
-      :gen_tcp.send(conn.socket, stuff)
-    end
+    result =
+      if conn.tls do
+        :ssl.send(conn.socket, stuff)
+      else
+        :gen_tcp.send(conn.socket, stuff)
+      end
 
-    conn
+    case result do
+      :ok ->
+        conn
+
+      {:error, _} ->
+        # Terminate with error to trigger supervisor restart
+        throw({:connection_error, :send_failed})
+    end
   end
 
   defp send_command(conn, cmd, on_response \\ fn conn, _status, _text -> conn end) do
