@@ -130,4 +130,10 @@ defmodule Yugo.ParserTest do
     date_string = "Thu, 24 Apr 2025 08:53:29 GMT"
     assert ~U[2025-04-24 08:53:29Z] == Parser.rfc5322_to_datetime(date_string)
   end
+  
+  test "parse date with GMT timezone format" do
+    # Test that the GMT timezone format is properly handled
+    date_string = "Thu, 24 Apr 2025 08:53:29 GMT"
+    assert ~U[2025-04-24 08:53:29Z] == Parser.rfc5322_to_datetime(date_string)
+  end
 end
