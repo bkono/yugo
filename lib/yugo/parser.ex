@@ -396,55 +396,67 @@ defmodule Yugo.Parser do
     {octets, rest}
   end
 
-  defp rfc5322_to_datetime(string) do
+  def rfc5322_to_datetime(string) do
     monthname = ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
 
     # First try to match the standard format with numeric timezone offset
-    standard_format = Regex.named_captures(
-      ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<offset_sign>[+\-])(?<offset_hours>\d{2})(?<offset_minutes>\d{2})/i,
-      string
-    )
+    standard_format =
+      Regex.named_captures(
+        ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<offset_sign>[+\-])(?<offset_hours>\d{2})(?<offset_minutes>\d{2})/i,
+        string
+      )
 
     # Also try to match formats with named timezones like GMT, UTC
-    gmt_format = Regex.named_captures(
-      ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<timezone>GMT|UTC)/i,
-      string
-    )
+    gmt_format =
+      Regex.named_captures(
+        ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<timezone>GMT|UTC)/i,
+        string
+      )
 
     cond do
       standard_format != nil ->
         month = 1 + Enum.find_index(monthname, &(&1 == standard_format["month"]))
 
-        date = Date.new!(
-          String.to_integer(standard_format["year"]),
-          month,
-          String.to_integer(standard_format["day"])
-        )
+        date =
+          Date.new!(
+            String.to_integer(standard_format["year"]),
+            month,
+            String.to_integer(standard_format["day"])
+          )
 
-        time = Time.new!(
-          String.to_integer(standard_format["hour"]),
-          String.to_integer(standard_format["minute"]),
-          String.to_integer(standard_format["second"] || "0")
-        )
+        time =
+          Time.new!(
+            String.to_integer(standard_format["hour"]),
+            String.to_integer(standard_format["minute"]),
+            String.to_integer(standard_format["second"] || "0")
+          )
 
         DateTime.new!(date, time)
-        |> DateTime.add(String.to_integer(standard_format["offset_sign"] <> standard_format["offset_hours"]), :hour)
-        |> DateTime.add(String.to_integer(standard_format["offset_sign"] <> standard_format["offset_minutes"]), :minute)
+        |> DateTime.add(
+          String.to_integer(standard_format["offset_sign"] <> standard_format["offset_hours"]),
+          :hour
+        )
+        |> DateTime.add(
+          String.to_integer(standard_format["offset_sign"] <> standard_format["offset_minutes"]),
+          :minute
+        )
 
       gmt_format != nil ->
         month = 1 + Enum.find_index(monthname, &(&1 == gmt_format["month"]))
 
-        date = Date.new!(
-          String.to_integer(gmt_format["year"]),
-          month,
-          String.to_integer(gmt_format["day"])
-        )
+        date =
+          Date.new!(
+            String.to_integer(gmt_format["year"]),
+            month,
+            String.to_integer(gmt_format["day"])
+          )
 
-        time = Time.new!(
-          String.to_integer(gmt_format["hour"]),
-          String.to_integer(gmt_format["minute"]),
-          String.to_integer(gmt_format["second"] || "0")
-        )
+        time =
+          Time.new!(
+            String.to_integer(gmt_format["hour"]),
+            String.to_integer(gmt_format["minute"]),
+            String.to_integer(gmt_format["second"] || "0")
+          )
 
         # GMT/UTC is at +0000 offset
         DateTime.new!(date, time, "Etc/UTC")
