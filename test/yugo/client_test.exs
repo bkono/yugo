@@ -326,6 +326,36 @@ defmodule Yugo.ClientTest do
     assert Task.await(task) == {:error, "[ALREADYEXISTS] Mailbox already exists"}
   end
 
+  test "search messages (sequence numbers)" do
+    socket = ssl_server(:test_search)
+
+    task = Task.async(fn -> Yugo.search(:test_search, "ALL") end)
+
+    assert_comms(socket, ~S"""
+    C: DONE
+    C: 5 SEARCH ALL
+    S: * SEARCH 2 4 8
+    S: 5 OK SEARCH completed
+    """)
+
+    assert Task.await(task) == {:ok, [2, 4, 8]}
+  end
+
+  test "uid search messages (uids)" do
+    socket = ssl_server(:test_uid_search)
+
+    task = Task.async(fn -> Yugo.uid_search(:test_uid_search, "ALL") end)
+
+    assert_comms(socket, ~S"""
+    C: DONE
+    C: 5 UID SEARCH ALL
+    S: * SEARCH 101 102 103
+    S: 5 OK SEARCH completed
+    """)
+
+    assert Task.await(task) == {:ok, [101, 102, 103]}
+  end
+
   test "fetch prior message" do
     socket = ssl_server(:test_fetch)
 

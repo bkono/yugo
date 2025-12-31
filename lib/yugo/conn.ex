@@ -35,6 +35,7 @@ defmodule Yugo.Conn do
           attrs_needed_by_filters: String.t(),
           ssl_verify: :verify_none | :verify_peer,
           list_response_acc: [%{flags: [String.t()], delimiter: String.t(), name: String.t()}],
+          search_response_acc: [integer],
           fetch_queue: [integer]
         }
 
@@ -70,6 +71,7 @@ defmodule Yugo.Conn do
     unprocessed_messages: %{},
     attrs_needed_by_filters: "",
     list_response_acc: [],
+    search_response_acc: [],
     fetch_queue: []
   ]
 end

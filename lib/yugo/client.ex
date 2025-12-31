@@ -200,9 +200,45 @@ defmodule Yugo.Client do
     {:noreply, conn}
   end
 
+  @impl true
+  def handle_call({:search, criteria}, from, conn) do
+    conn =
+      conn
+      |> cancel_idle()
+      |> send_command(
+        "SEARCH #{criteria}",
+        &on_search_response(&1, &2, &3, from)
+      )
+
+    {:noreply, conn}
+  end
+
+  @impl true
+  def handle_call({:uid_search, criteria}, from, conn) do
+    conn =
+      conn
+      |> cancel_idle()
+      |> send_command(
+        "UID SEARCH #{criteria}",
+        &on_search_response(&1, &2, &3, from)
+      )
+
+    {:noreply, conn}
+  end
+
   defp on_list_response(conn, :ok, response, from) do
     mailbox_names = Enum.map(response, fn %{name: name} -> name end)
     GenServer.reply(from, mailbox_names)
+    maybe_idle(conn)
+  end
+
+  defp on_search_response(conn, :ok, response, from) when is_list(response) do
+    GenServer.reply(from, {:ok, response})
+    maybe_idle(conn)
+  end
+
+  defp on_search_response(conn, status, text, from) when status in [:no, :bad] do
+    GenServer.reply(from, {:error, text})
     maybe_idle(conn)
   end
 
@@ -670,12 +706,19 @@ defmodule Yugo.Client do
         {%{on_response: resp_fn, command: command}, conn} =
           pop_in(conn, [Access.key!(:tag_map), tag])
 
-        if String.contains?(command, "LIST") do
-          full_response = Enum.reverse(conn.list_response_acc)
-          conn = %{conn | list_response_acc: []}
-          resp_fn.(conn, status, full_response)
-        else
-          resp_fn.(conn, status, text)
+        cond do
+          String.contains?(command, "LIST") ->
+            full_response = Enum.reverse(conn.list_response_acc)
+            conn = %{conn | list_response_acc: []}
+            resp_fn.(conn, status, full_response)
+
+          String.contains?(command, "SEARCH") ->
+            full_response = Enum.reverse(conn.search_response_acc)
+            conn = %{conn | search_response_acc: []}
+            resp_fn.(conn, status, full_response)
+
+          true ->
+            resp_fn.(conn, status, text)
         end
 
       {:tagged_response, {tag, status, text}} when status in [:bad, :no] ->
@@ -693,7 +736,13 @@ defmodule Yugo.Client do
               {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
               resp_fn.(conn, status, text)
             else
-              raise "Got `NO` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+              if String.contains?(conn.tag_map[tag].command, "SEARCH") do
+                {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
+                conn = %{conn | search_response_acc: []}
+                resp_fn.(conn, status, text)
+              else
+                raise "Got `NO` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+              end
             end
         end
 
@@ -813,6 +862,10 @@ defmodule Yugo.Client do
       {:list, %{flags: flags, delimiter: delimiter, name: name}} ->
         list_item = %{flags: flags, delimiter: delimiter, name: name}
         %{conn | list_response_acc: [list_item | conn.list_response_acc]}
+
+      {:search, ids} when is_list(ids) ->
+        # Preserve overall server order; parser yields ids in order for each line, but SEARCH can be multi-line.
+        %{conn | search_response_acc: Enum.reverse(ids) ++ conn.search_response_acc}
 
       {:copyuid,
        %{validity: _validity, source_uids: _source_uids, destination_uids: _destination_uids}} ->

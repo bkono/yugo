@@ -193,6 +193,9 @@ defmodule Yugo.Parser do
         [flags, delimiter, name] = parse_list_response(resp)
         [list: %{flags: flags, delimiter: delimiter, name: name}]
 
+      Regex.match?(~r/^SEARCH(\s|$)/i, resp) ->
+        [search: parse_search_response(resp)]
+
       true ->
         []
     end
@@ -210,6 +213,23 @@ defmodule Yugo.Parser do
     name = String.trim(name, "\"")
 
     [flags, delimiter, name]
+  end
+
+  defp parse_search_response(resp) do
+    # resp is something like: "SEARCH 1 2 3" or just "SEARCH"
+    resp
+    |> String.trim()
+    |> String.replace_prefix("SEARCH", "")
+    |> String.trim()
+    |> case do
+      "" ->
+        []
+
+      rest ->
+        rest
+        |> String.split(~r/\s+/, trim: true)
+        |> Enum.map(&String.to_integer/1)
+    end
   end
 
   defp parse_msg_atts(rest), do: parse_msg_atts_aux(rest, [])
