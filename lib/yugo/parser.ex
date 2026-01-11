@@ -419,11 +419,39 @@ defmodule Yugo.Parser do
   defp rfc5322_to_datetime(string) do
     monthname = ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
 
+    # Try numeric offset first (e.g., +0000, -0700)
     parts =
       Regex.named_captures(
         ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<offset_sign>[+\-])(?<offset_hours>\d{2})(?<offset_minutes>\d{2})/i,
         string
       )
+
+    # Fallback to timezone abbreviations (e.g., GMT, UTC, UT)
+    parts =
+      if parts do
+        parts
+      else
+        tz_parts =
+          Regex.named_captures(
+            ~r/^(?:[^,]+,)?\s*(?<day>\d+)\s+(?<month>#{Enum.join(monthname, "|")})\s+(?<year>\d{4})\s+(?<hour>\d{2}):(?<minute>\d{2}):?(?<second>\d{2})?\s+(?<tz_abbrev>GMT|UTC|UT|Z)/i,
+            string
+          )
+
+        if tz_parts do
+          # Convert timezone abbreviation to numeric offset (all these are UTC/+0000)
+          Map.merge(tz_parts, %{
+            "offset_sign" => "+",
+            "offset_hours" => "00",
+            "offset_minutes" => "00"
+          })
+        else
+          nil
+        end
+      end
+
+    if parts == nil do
+      raise ArgumentError, "Failed to parse RFC5322 date: #{inspect(string)}"
+    end
 
     month = 1 + Enum.find_index(monthname, &(&1 == parts["month"]))
 

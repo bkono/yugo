@@ -83,6 +83,32 @@ defmodule Yugo.ParserTest do
       Parser.parse_response(~S|* 0 fetch (UID 84 FLags (\Seen \Recent))|)
   end
 
+  test "parse FETCH with GMT timezone" do
+    # Google uses GMT instead of +0000 in some emails
+    result =
+      Parser.parse_response(
+        ~S|* 1 FETCH (FLAGS (\Recent $X-ME-Annot-2) UID 19287 ENVELOPE ("Sun, 11 Jan 2026 00:24:30 GMT" "Security alert for bk@wearegenerate.com" (("Google" NIL "no-reply" "accounts.google.com")) (("Google" NIL "no-reply" "accounts.google.com")) (("Google" NIL "no-reply" "accounts.google.com")) ((NIL NIL "bryan" "kono.sh")) NIL NIL NIL ""))|
+      )
+
+    assert [fetch: {1, :envelope, envelope}, fetch: {1, :uid, 19287}, fetch: {1, :flags, _}] =
+             result
+
+    assert envelope.date == ~U[2026-01-11 00:24:30Z]
+    assert envelope.subject == "Security alert for bk@wearegenerate.com"
+    assert envelope.from == [{"Google", "no-reply@accounts.google.com"}]
+  end
+
+  test "parse FETCH with UTC timezone" do
+    result =
+      Parser.parse_response(
+        ~S|* 1 FETCH (ENVELOPE ("Sat, 11 Jan 2026 12:30:00 UTC" "Test email" (("Test" NIL "test" "example.com")) (("Test" NIL "test" "example.com")) (("Test" NIL "test" "example.com")) NIL NIL NIL NIL NIL))|
+      )
+
+    assert [fetch: {1, :envelope, envelope}] = result
+    assert envelope.date == ~U[2026-01-11 12:30:00Z]
+    assert envelope.subject == "Test email"
+  end
+
   test "parse COPYUID response" do
     [
       copyuid: %{
