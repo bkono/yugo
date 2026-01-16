@@ -298,6 +298,35 @@ defmodule Yugo do
   end
 
   @doc """
+  Fetches prior messages based on the given UID set.
+
+  This function sends a request to fetch messages by UID asynchronously. The fetched messages
+  will be delivered to subscribers just like new messages.
+
+  ## Parameters
+
+    * `client_name` - The name of the [`Client`](`Yugo.Client`) to use.
+    * `uid_set` - A string representing the UID set of messages to fetch (e.g., "100:*", "1,2,3").
+
+  ## Returns
+
+    * `:ok` immediately, as the operation is asynchronous.
+
+  ## Example
+
+      iex> Yugo.uid_fetch(:my_client, "100:200")
+      :ok
+
+  """
+  @spec uid_fetch(Client.name(), String.t()) :: :ok
+  def uid_fetch(client_name, uid_set) do
+    GenServer.cast(
+      {:via, Registry, {Yugo.Registry, client_name}},
+      {:uid_fetch, uid_set}
+    )
+  end
+
+  @doc """
   Retrieves the number of messages in the currently selected mailbox.
 
   ## Parameters

@@ -153,6 +153,20 @@ defmodule Yugo.Client do
   end
 
   @impl true
+  def handle_cast({:uid_fetch, uid_set}, conn) do
+    uids = Parser.parse_uid_set(uid_set)
+
+    conn =
+      conn
+      |> cancel_idle()
+      |> Map.update!(:uid_fetch_pending, &MapSet.union(&1, MapSet.new(uids)))
+      |> send_command("UID FETCH #{uid_set} (FLAGS ENVELOPE UID BODY)")
+      |> maybe_idle()
+
+    {:noreply, conn}
+  end
+
+  @impl true
   def handle_call({:capabilities}, _from, conn) do
     {:reply, conn.capabilities, conn}
   end
@@ -281,6 +295,17 @@ defmodule Yugo.Client do
       | unprocessed_messages: Map.merge(conn.unprocessed_messages, new_messages),
         fetch_queue: conn.fetch_queue ++ seqnums
     }
+  end
+
+  # Creates a placeholder entry for uid_fetch responses when we receive fetch data
+  # for a seqnum we don't have yet. The UID handler will fill in the UID later.
+  defp maybe_create_uid_fetch_entry(conn, seq_num) do
+    if MapSet.size(conn.uid_fetch_pending) > 0 and
+         not Map.has_key?(conn.unprocessed_messages, seq_num) do
+      put_in(conn, [Access.key!(:unprocessed_messages), seq_num], %{fetched: :pre_body})
+    else
+      conn
+    end
   end
 
   @impl true
@@ -804,6 +829,8 @@ defmodule Yugo.Client do
         }
 
       {:fetch, {seq_num, :flags, flags}} ->
+        conn = maybe_create_uid_fetch_entry(conn, seq_num)
+
         if Map.has_key?(conn.unprocessed_messages, seq_num) do
           flags = Parser.system_flags_to_atoms(flags)
 
@@ -814,6 +841,8 @@ defmodule Yugo.Client do
         end
 
       {:fetch, {seq_num, :envelope, envelope}} ->
+        conn = maybe_create_uid_fetch_entry(conn, seq_num)
+
         if Map.has_key?(conn.unprocessed_messages, seq_num) do
           conn
           |> put_in([Access.key!(:unprocessed_messages), seq_num, :envelope], envelope)
@@ -822,6 +851,8 @@ defmodule Yugo.Client do
         end
 
       {:fetch, {seq_num, :body, one_or_mpart}} ->
+        conn = maybe_create_uid_fetch_entry(conn, seq_num)
+
         if Map.has_key?(conn.unprocessed_messages, seq_num) do
           conn
           |> put_in(
@@ -852,11 +883,29 @@ defmodule Yugo.Client do
         end
 
       {:fetch, {seq_num, :uid, uid}} ->
-        if Map.has_key?(conn.unprocessed_messages, seq_num) do
-          conn
-          |> put_in([Access.key!(:unprocessed_messages), seq_num, :uid], uid)
-        else
-          conn
+        has_entry = Map.has_key?(conn.unprocessed_messages, seq_num)
+        is_pending = MapSet.member?(conn.uid_fetch_pending, uid)
+
+        cond do
+          has_entry and is_pending ->
+            # Entry was pre-created by maybe_create_uid_fetch_entry, fill in UID and remove from pending
+            conn
+            |> Map.update!(:uid_fetch_pending, &MapSet.delete(&1, uid))
+            |> put_in([Access.key!(:unprocessed_messages), seq_num, :uid], uid)
+
+          has_entry ->
+            # Regular fetch response, just add UID
+            conn
+            |> put_in([Access.key!(:unprocessed_messages), seq_num, :uid], uid)
+
+          is_pending ->
+            # Create entry for uid_fetch response (shouldn't normally happen with maybe_create_uid_fetch_entry)
+            conn
+            |> Map.update!(:uid_fetch_pending, &MapSet.delete(&1, uid))
+            |> put_in([Access.key!(:unprocessed_messages), seq_num], %{fetched: :pre_body, uid: uid})
+
+          true ->
+            conn
         end
 
       {:list, %{flags: flags, delimiter: delimiter, name: name}} ->

@@ -36,7 +36,8 @@ defmodule Yugo.Conn do
           ssl_verify: :verify_none | :verify_peer,
           list_response_acc: [%{flags: [String.t()], delimiter: String.t(), name: String.t()}],
           search_response_acc: [integer],
-          fetch_queue: [integer]
+          fetch_queue: [integer],
+          uid_fetch_pending: MapSet.t(integer)
         }
 
   @derive {Inspect, except: [:password]}
@@ -72,6 +73,7 @@ defmodule Yugo.Conn do
     attrs_needed_by_filters: "",
     list_response_acc: [],
     search_response_acc: [],
-    fetch_queue: []
+    fetch_queue: [],
+    uid_fetch_pending: MapSet.new()
   ]
 end
