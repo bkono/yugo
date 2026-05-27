@@ -902,7 +902,10 @@ defmodule Yugo.Client do
             # Create entry for uid_fetch response (shouldn't normally happen with maybe_create_uid_fetch_entry)
             conn
             |> Map.update!(:uid_fetch_pending, &MapSet.delete(&1, uid))
-            |> put_in([Access.key!(:unprocessed_messages), seq_num], %{fetched: :pre_body, uid: uid})
+            |> put_in([Access.key!(:unprocessed_messages), seq_num], %{
+              fetched: :pre_body,
+              uid: uid
+            })
 
           true ->
             conn

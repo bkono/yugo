@@ -143,7 +143,8 @@ defmodule Yugo do
   - The IMAP server still responds with untagged `* SEARCH ...` lines; the semantics are UIDs
     because the command is `UID SEARCH`.
   """
-  @spec uid_search(Client.name(), criteria :: String.t()) :: {:ok, [integer()]} | {:error, String.t()}
+  @spec uid_search(Client.name(), criteria :: String.t()) ::
+          {:ok, [integer()]} | {:error, String.t()}
   def uid_search(client_name, criteria) when is_binary(criteria) do
     GenServer.call({:via, Registry, {Yugo.Registry, client_name}}, {:uid_search, criteria})
   end

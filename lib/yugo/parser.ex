@@ -515,7 +515,7 @@ defmodule Yugo.Parser do
           parse_body_fld_param,
           &parse_nstring/1,
           &parse_nstring/1,
-          &parse_string/1,
+          &parse_nstring/1,
           &parse_number/1,
           &parse_optional_number/1
         ],
@@ -526,12 +526,15 @@ defmodule Yugo.Parser do
 
     body = %{
       mime_type: mime_type,
-      encoding: String.upcase(enc),
+      encoding: enc |> default_body_encoding() |> String.upcase(),
       params: Map.new(params)
     }
 
     {{:body, {:onepart, body}}, rest}
   end
+
+  defp default_body_encoding(nil), do: "7bit"
+  defp default_body_encoding(encoding), do: encoding
 
   def parse_move_uids(response) do
     case Regex.run(~r/\[COPYUID \d+ (\S+) (\S+)\]/i, response) do

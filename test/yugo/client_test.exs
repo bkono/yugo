@@ -58,6 +58,30 @@ defmodule Yugo.ClientTest do
     end
   end
 
+  test "receives body structure with NIL body encoding" do
+    ssl_server()
+    |> assert_comms(~S"""
+    S: * 2 EXISTS
+    C: DONE
+    S: 4 OK idle done
+    C: 5 FETCH 2 (BODY FLAGS ENVELOPE UID)
+    S: * 2 FETCH (FLAGS () BODY (("text" "plain" ("CHARSET" "UTF-8" "FORMAT" "flowed" "DELSP" "yes") NIL NIL NIL 1470 38)("text" "html" ("CHARSET" "UTF-8") NIL NIL "quoted-printable" 11365 191) "alternative") ENVELOPE ("Sun, 29 Jun 2025 12:44:15 -0700" "Approaching pooled storage limit" (("The Google Workspace Team" NIL "workspace-noreply" "google.com")) (("The Google Workspace Team" NIL "workspace-noreply" "google.com")) (("The Google Workspace Team" NIL "workspace-noreply" "google.com")) ((NIL NIL "bkonowitz" "me.com")) NIL NIL NIL "<9edb06c723b86852fd498758638f1f9888a892d6-20207308-111137805@google.com>"))
+    S: 5 oK done
+    C: 6 FETCH 2 (BODY.PEEK[1] BODY.PEEK[2])
+    S: * 2 fetch (BODY[1] "plain body" BODY[2] "<p>html body</p>")
+    S: 6 ok fetched
+    """)
+
+    receive do
+      {:email, _client, msg} ->
+        assert msg.body == [
+                 {"text/plain", %{"CHARSET" => "UTF-8", "DELSP" => "yes", "FORMAT" => "flowed"},
+                  "plain body"},
+                 {"text/html", %{"CHARSET" => "UTF-8"}, "<p>html body</p>"}
+               ]
+    end
+  end
+
   test "email with a text attachment" do
     ssl_server()
     |> assert_comms(~S"""
