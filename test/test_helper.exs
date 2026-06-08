@@ -18,14 +18,7 @@ defmodule Helpers.Client do
   defp assert_comms_aux(socket, []), do: socket
 
   defp assert_comms_aux(socket, [line | rest]) do
-    module =
-      case socket do
-        {:sslsocket, _, _} ->
-          :ssl
-
-        p when is_port(p) ->
-          :gen_tcp
-      end
+    module = if ssl_socket?(socket), do: :ssl, else: :gen_tcp
 
     case line do
       <<"C: ", expected_line::binary>> ->
@@ -163,4 +156,9 @@ defmodule Helpers.Client do
     |> do_hello()
     |> do_select_bootstrap()
   end
+
+  defp ssl_socket?(socket) when is_tuple(socket),
+    do: socket |> Tuple.to_list() |> List.first() == :sslsocket
+
+  defp ssl_socket?(_socket), do: false
 end

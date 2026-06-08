@@ -109,6 +109,9 @@ defmodule Yugo.Client do
       [
         server_name_indication: server,
         verify: ssl_verify,
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ],
         cacerts: :public_key.cacerts_get()
       ] ++ @common_connect_opts
 
@@ -118,6 +121,8 @@ defmodule Yugo.Client do
   end
 
   @impl true
+  def terminate(_reason, nil), do: :ok
+
   def terminate(_reason, conn) do
     conn
     |> send_command("LOGOUT")
