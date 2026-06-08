@@ -220,6 +220,19 @@ defmodule Yugo.Client do
   end
 
   @impl true
+  def handle_call({:status, mailbox}, from, conn) do
+    conn =
+      conn
+      |> cancel_idle()
+      |> send_command(
+        "STATUS #{quote_string(mailbox)} (MESSAGES)",
+        &on_status_response(&1, &2, &3, from)
+      )
+
+    {:noreply, conn}
+  end
+
+  @impl true
   def handle_call({:search, criteria}, from, conn) do
     conn =
       conn
@@ -257,6 +270,16 @@ defmodule Yugo.Client do
   end
 
   defp on_search_response(conn, status, text, from) when status in [:no, :bad] do
+    GenServer.reply(from, {:error, text})
+    maybe_idle(conn)
+  end
+
+  defp on_status_response(conn, :ok, _response, from) do
+    GenServer.reply(from, :ok)
+    maybe_idle(conn)
+  end
+
+  defp on_status_response(conn, status, text, from) when status in [:no, :bad] do
     GenServer.reply(from, {:error, text})
     maybe_idle(conn)
   end
@@ -754,11 +777,18 @@ defmodule Yugo.Client do
       {:tagged_response, {tag, status, text}} when status in [:bad, :no] ->
         case {status, text} do
           {:bad, text} ->
-            if String.contains?(text, "Expected DONE") do
-              # This is likely due to an IDLE command being interrupted
-              %{conn | idling: false, idle_timer: nil}
-            else
-              raise "Got `BAD` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
+            cond do
+              String.contains?(text, "Expected DONE") ->
+                # This is likely due to an IDLE command being interrupted
+                %{conn | idling: false, idle_timer: nil}
+
+              command_returns_no_to_caller?(conn.tag_map[tag].command) ->
+                {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
+                conn = %{conn | search_response_acc: []}
+                resp_fn.(conn, status, text)
+
+              true ->
+                raise "Got `BAD` response status: `#{text}`. Command that caused this response: `#{conn.tag_map[tag].command}`"
             end
 
           {:no, text} ->
@@ -766,7 +796,7 @@ defmodule Yugo.Client do
               {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
               resp_fn.(conn, status, text)
             else
-              if String.contains?(conn.tag_map[tag].command, "SEARCH") do
+              if command_returns_no_to_caller?(conn.tag_map[tag].command) do
                 {%{on_response: resp_fn}, conn} = pop_in(conn, [Access.key!(:tag_map), tag])
                 conn = %{conn | search_response_acc: []}
                 resp_fn.(conn, status, text)
@@ -935,6 +965,10 @@ defmodule Yugo.Client do
 
   defp apply_actions(conn, [action | rest]),
     do: conn |> apply_action(action) |> apply_actions(rest)
+
+  defp command_returns_no_to_caller?(command) do
+    String.contains?(command, "SEARCH") or String.contains?(command, "STATUS")
+  end
 
   defp send_raw(conn, stuff) do
     if conn.tls do

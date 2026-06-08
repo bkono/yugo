@@ -112,6 +112,18 @@ defmodule Yugo do
   end
 
   @doc """
+  Checks that a mailbox can be addressed with IMAP STATUS without selecting it.
+
+  This is useful for validating watcher mailboxes before starting a dedicated
+  client for them. It returns `:ok` for tagged OK responses and `{:error, text}`
+  for tagged NO/BAD responses.
+  """
+  @spec status(Client.name(), mailbox :: String.t()) :: :ok | {:error, String.t()}
+  def status(client_name, mailbox) when is_binary(mailbox) do
+    GenServer.call({:via, Registry, {Yugo.Registry, client_name}}, {:status, mailbox})
+  end
+
+  @doc """
   Searches the currently selected mailbox and returns matching **message sequence numbers**.
 
   `criteria` is a raw IMAP SEARCH criteria string, for example:

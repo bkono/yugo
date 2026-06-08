@@ -302,6 +302,35 @@ defmodule Yugo.ClientTest do
              ]
   end
 
+  test "status returns ok for an addressable mailbox" do
+    socket = ssl_server(:test_status_ok)
+
+    task = Task.async(fn -> Yugo.status(:test_status_ok, "Janet/TrainFeed") end)
+
+    assert_comms(socket, ~S"""
+    C: DONE
+    C: 5 STATUS "Janet/TrainFeed" (MESSAGES)
+    S: * STATUS "Janet/TrainFeed" (MESSAGES 0)
+    S: 5 OK STATUS completed
+    """)
+
+    assert Task.await(task) == :ok
+  end
+
+  test "status returns error for a missing mailbox" do
+    socket = ssl_server(:test_status_missing)
+
+    task = Task.async(fn -> Yugo.status(:test_status_missing, "Janet/TrainInbox") end)
+
+    assert_comms(socket, ~S"""
+    C: DONE
+    C: 5 STATUS "Janet/TrainInbox" (MESSAGES)
+    S: 5 NO Mailbox does not exist
+    """)
+
+    assert Task.await(task) == {:error, "Mailbox does not exist"}
+  end
+
   # todo add copy/store/expunge fallback when capabilities doesn't support move
 
   test "move messages without returning UIDs" do
