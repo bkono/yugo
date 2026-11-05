@@ -18,8 +18,10 @@ defmodule Yugo.Parser do
   def decode_body(body, encoding) do
     case encoding do
       "BASE64" ->
+        # RFC 2045: decoders must ignore characters outside the base64 alphabet.
+        # IMAP/MIME bodies often include spaces and other whitespace besides CRLF.
         body
-        |> String.replace("\r\n", "")
+        |> String.replace(~r/[^A-Za-z0-9+\/=]/, "")
         |> Base.decode64!()
 
       "QUOTED-PRINTABLE" ->

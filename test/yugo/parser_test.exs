@@ -150,4 +150,26 @@ defmodule Yugo.ParserTest do
     [list: %{flags: [:Unmarked, :HasNoChildren], delimiter: "/", name: "Drafts"}] =
       Parser.parse_response("* LIST (\Unmarked \HasNoChildren) \"/\" \"Drafts\"\r\n")
   end
+
+  test "decode_body BASE64 ignores whitespace and other non-alphabet characters" do
+    clean = Base.encode64("hello world")
+    # Spaces and folded CRLF lines previously raised ArgumentError from Base.decode64!
+    dirty =
+      clean
+      |> String.graphemes()
+      |> Enum.chunk_every(4)
+      |> Enum.map(&Enum.join/1)
+      |> Enum.join(" ")
+      |> then(&(&1 <> "\r\n\t"))
+
+    assert_raise ArgumentError, ~r/non-alphabet character found: " "/, fn ->
+      dirty
+      |> String.replace("\r\n", "")
+      |> Base.decode64!()
+    end
+
+    assert Parser.decode_body(dirty, "BASE64") == "hello world"
+    assert Parser.decode_body(clean, "BASE64") == "hello world"
+    assert Parser.decode_body(clean <> "\r\n", "BASE64") == "hello world"
+  end
 end

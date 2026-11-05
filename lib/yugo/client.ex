@@ -26,6 +26,7 @@ defmodule Yugo.Client do
   """
 
   use GenServer
+  require Logger
   alias Yugo.{Conn, Parser, Filter}
 
   @typedoc """
@@ -661,11 +662,34 @@ defmodule Yugo.Client do
 
     for {filter, pid} <- conn.filters do
       if Filter.accepts?(filter, msg) do
-        send(pid, {:email, conn.my_name, package_message(msg, seqnum)})
+        try do
+          send(pid, {:email, conn.my_name, package_message(msg, seqnum)})
+        rescue
+          exception ->
+            meta = packaging_error_meta(msg, seqnum, conn)
+
+            Logger.error(
+              "Yugo failed to package message name=#{inspect(conn.my_name)} mailbox=#{inspect(conn.mailbox)} uid=#{inspect(meta.uid)} subject=#{inspect(meta.subject)} from=#{inspect(meta.from)} seqnum=#{inspect(seqnum)} error=#{Exception.message(exception)}"
+            )
+
+            send(pid, {:email_error, conn.my_name, meta, exception})
+        end
       end
     end
 
     conn
+  end
+
+  defp packaging_error_meta(msg, seqnum, conn) do
+    envelope = Map.get(msg, :envelope) || %{}
+
+    %{
+      uid: Map.get(msg, :uid),
+      subject: Map.get(envelope, :subject),
+      from: Map.get(envelope, :from),
+      seqnum: seqnum,
+      mailbox: conn.mailbox
+    }
   end
 
   # Preprocesses/cleans the message before it is sent to a subscriber
