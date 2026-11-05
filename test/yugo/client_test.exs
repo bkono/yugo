@@ -128,6 +128,56 @@ defmodule Yugo.ClientTest do
     end
   end
 
+  test "BASE64 body with spaces still packages successfully" do
+    ssl_server()
+    |> assert_comms(~S"""
+    S: * 2 EXISTS
+    C: DONE
+    S: 4 OK idle done
+    C: 5 FETCH 2 (BODY FLAGS ENVELOPE UID)
+    S: * 2 FETCH (FLAGS () BODY ("text" "plain" ("charset" "us-ascii") NIL NIL "base64" 8 1) ENVELOPE ("Wed, 07 Dec 2022 18:02:41 -0500" "Spaced base64" (("Marge Simpson" NIL "marge" "simpsons-family.com")) (("Marge Simpson" NIL "marge" "simpsons-family.com")) (("Marge" NIL "marge" "simpsons-family.com")) (("HOMIEEEE" NIL "homer" "simpsons-family.com")) NIL NIL NIL "<spaced-b64@example.com>") UID 4242)
+    S: 5 oK done
+    C: 6 FETCH 2 (BODY.PEEK[1])
+    S: * 2 fetcH (BODY[1] "aGVs bG8K")
+    S: 6 ok fetched
+    """)
+
+    assert_receive {:email, _client, msg}, 1000
+    assert msg.subject == "Spaced base64"
+    assert msg.uid == 4242
+    assert msg.body == {"text/plain", %{"charset" => "us-ascii"}, "hello\n"}
+  end
+
+  test "packaging failure notifies subscribers with email_error and keeps client alive" do
+    name = :test_email_error
+
+    ssl_server(name)
+    |> assert_comms(~S"""
+    S: * 2 EXISTS
+    C: DONE
+    S: 4 OK idle done
+    C: 5 FETCH 2 (BODY FLAGS ENVELOPE UID)
+    S: * 2 FETCH (FLAGS () BODY ("text" "plain" ("charset" "us-ascii") NIL NIL "base64" 3 1) ENVELOPE ("Wed, 07 Dec 2022 18:02:41 -0500" "Poison message" (("Marge Simpson" NIL "marge" "simpsons-family.com")) (("Marge Simpson" NIL "marge" "simpsons-family.com")) (("Marge" NIL "marge" "simpsons-family.com")) (("HOMIEEEE" NIL "homer" "simpsons-family.com")) NIL NIL NIL "<poison@example.com>") UID 9999)
+    S: 5 oK done
+    C: 6 FETCH 2 (BODY.PEEK[1])
+    S: * 2 fetcH (BODY[1] "SGV")
+    S: 6 ok fetched
+    """)
+
+    assert_receive {:email_error, ^name, meta, %ArgumentError{} = exception}, 1000
+    assert meta.uid == 9999
+    assert meta.subject == "Poison message"
+    assert meta.seqnum == 2
+    assert meta.mailbox == "INBOX"
+    assert meta.from == [{"Marge Simpson", "marge@simpsons-family.com"}]
+    assert Exception.message(exception) =~ "incorrect padding"
+    refute_receive {:email, ^name, _}, 200
+
+    client_pid = GenServer.whereis({:via, Registry, {Yugo.Registry, name}})
+    assert client_pid
+    assert Process.alive?(client_pid)
+  end
+
   test "multiple sender addresses" do
     ssl_server()
     |> assert_comms(~S"""
